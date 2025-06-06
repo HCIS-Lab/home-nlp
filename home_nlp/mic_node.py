@@ -5,6 +5,7 @@ import sounddevice as sd
 import numpy as np
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 from std_srvs.srv import SetBool
+from home_interfaces.msg import Audio
 
 
 class MicNode(Node):
@@ -16,7 +17,7 @@ class MicNode(Node):
         self.device_id = 1
         self.channels = 1
 
-        self.pub = self.create_publisher(Float32MultiArray, "audio", 10)
+        self.pub = self.create_publisher(Audio, "audio", 10)
         self.srv = self.create_service(
             SetBool, "toggle_mic", self.toggle_mic_cb
         )
@@ -62,26 +63,33 @@ class MicNode(Node):
         if self.stream.stopped:
             return
 
-        data, overflowed = self.stream.read(self.chunk_size)
+        audio_chunk, overflowed = self.stream.read(self.chunk_size)
 
-        num_frame = data.shape[0]
-        num_channel = data.shape[1]
+        num_frame = audio_chunk.shape[0]
+        num_channel = audio_chunk.shape[1]
 
-        msg = Float32MultiArray()
-        msg.data = data.flatten().tolist()
+        msg = Audio()
 
-        msg.layout.dim.append(MultiArrayDimension())  # type: ignore
-        msg.layout.dim[0].label = "frames"  # type: ignore
-        msg.layout.dim[0].size = num_frame  # type: ignore
-        msg.layout.dim[0].stride = num_frame * num_channel  # type: ignore
+        array_data = Float32MultiArray()
+        array_data.data = audio_chunk.flatten().tolist()
 
-        msg.layout.dim.append(MultiArrayDimension())  # type: ignore
-        msg.layout.dim[1].label = "channels"  # type: ignore
-        msg.layout.dim[1].size = num_channel  # type: ignore
-        msg.layout.dim[1].stride = num_channel  # type: ignore
+        array_data.layout.dim.append(MultiArrayDimension())  # type: ignore
+        array_data.layout.dim[0].label = "frames"  # type: ignore
+        array_data.layout.dim[0].size = num_frame  # type: ignore
+        array_data.layout.dim[0].stride = num_frame * num_channel  # type: ignore
+
+        array_data.layout.dim.append(MultiArrayDimension())  # type: ignore
+        array_data.layout.dim[1].label = "channels"  # type: ignore
+        array_data.layout.dim[1].size = num_channel  # type: ignore
+        array_data.layout.dim[1].stride = num_channel  # type: ignore
+
+        msg.data = array_data
+        msg.sample_rate = self.sample_rate
 
         self.pub.publish(msg)
-        self.get_logger().debug(f"Published audio chunk of size {len(data)}")
+        self.get_logger().debug(
+            f"Published audio chunk of size {len(audio_chunk)}"
+        )
 
     def destroy_node(self):
         if self.stream:
