@@ -1,3 +1,24 @@
+"""
+mic_node.py
+
+A ROS 2 node that publishes audio data from a microphone device.
+
+This node captures audio chunks from a microphone using the sounddevice
+library and publishes them as `home_interfaces/msg/Audio` messages
+on the "audio" topic. The microphone stream can be toggled on/off
+via the "toggle_mic" service.
+
+Dependencies:
+    - rclpy
+    - sounddevice
+    - numpy
+    - home_interfaces.msg.Audio
+    - std_srvs.srv.SetBool
+
+Author: Enfu Liao
+Date: 2025-06-09
+"""
+
 import rclpy
 from rclpy.node import Node
 from typing import List
@@ -8,14 +29,14 @@ from std_srvs.srv import SetBool
 from home_interfaces.msg import Audio
 
 
-class MicNode(Node):
+class MicrophoneNode(Node):
     def __init__(self):
         super().__init__("mic_node")
 
         self.sample_rate = 48000
         self.chunk_size = 1024
-        self.device_id = 1
-        self.channels = 1
+        self.device_id = 6
+        self.channels = 1 # TODO from config
 
         self.pub = self.create_publisher(Audio, "audio", 10)
         self.srv = self.create_service(
@@ -102,7 +123,7 @@ class MicNode(Node):
 def main(args: List[str] | None = None):
 
     rclpy.init(args=args)
-    node = MicNode()
+    node = MicrophoneNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

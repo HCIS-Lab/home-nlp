@@ -23,6 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mic_node = home_nlp.mic_node:main",
+            "asr_node = home_nlp.asr_node:main",
         ],
     },
 )
