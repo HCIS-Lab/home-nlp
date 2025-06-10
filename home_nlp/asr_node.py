@@ -1,150 +1,179 @@
 """
 asr_node.py
 
-TODO
+A ROS 2 node that performs automatic speech recognition (ASR) using Whisper.
+
+This node receives audio data from the "audio" topic (published as
+`home_interfaces/msg/Audio` messages), resamples it to 16 kHz mono,
+and transcribes it into text using a streaming ASR model based on
+Faster-Whisper. The transcribed text is published to the "transcription" topic
+as `std_msgs/msg/String`.
+
+The transcription is buffered and finalized based on silence detection and
+custom rules (e.g., banlist filtering). The ASR backend is initialized and
+warmed up at startup to reduce initial inference latency.
+
+Dependencies:
+    - rclpy
+    - numpy
+    - scipy
+    - queue
+    - home_interfaces.msg.Audio
+    - std_msgs.msg.String
+    - home_nlp.whisper_online.FasterWhisperASR
+    - home_nlp.whisper_online.OnlineASRProcessor
 
 Author: Enfu Liao
-Date: 2025-06-09
+Date: 2025-06-10
 """
 
 import rclpy
 from rclpy.node import Node
 from typing import List
 from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from home_interfaces.msg import Audio
 from std_msgs.msg import String
 import queue
 import numpy as np
 from scipy.signal import resample
-TARGET_SR = 16000  # TODO constants.py
+import math
+
+# TODO 改成 LifecycleNode
+# TODO QoS profile
+# TODO 處理 channel > 1 的情況 (audio_cb) => 現在是指處理單 channel
+# TODO Warmup 真的有效嗎?
+# TODO 是否要加上 Header? 如果要，是要用開頭還是結尾？
 
 
 class AutomaticSpeechRecognitionNode(Node):
     def __init__(self):
         super().__init__("asr_node")
-        pass
 
-        self.language = "zh"
-        self.origin_sr = 48000  # TODO from topic
-        self.num_channel = 1  # TODO from topic
-        self.max_empty_count = 0
-        self.block_duration = 1.0
-
-        self.block_size = int(self.origin_sr * self.block_duration)
+        self.declare_parameter("language", "zh")
+        self.declare_parameter("model", "large-v2")
+        self.declare_parameter("sample_rate", 48000)
+        self.declare_parameter("block_duration", 1.0)
+        self.declare_parameter("period", 1.0)  # TODO rename
+        self.declare_parameter("max_empty_count", 0)
+        self.declare_parameter(
+            "banlist",
+            [
+                "不吝点赞",
+                "转发",
+                "订阅",
+                "点点栏目",
+                "點點欄目",
+                "打赏支持明镜",
+                "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
+                "Amara.org",
+                "社群提供",
+                "点点欄目",
+                "幕",
+            ],
+        )
 
         self.audio_queue = queue.Queue()
         self.sentence_queue = queue.Queue()
-        self.sentence_buffer = []
+
         self.empty_count = 0
-        self.running = False
+        self.sentence_buffer = []
 
-        self.banlist = [
-            "不吝点赞",
-            "转发",
-            "订阅",
-            "点点栏目",
-            "點點欄目",
-            "打赏支持明镜",
-            "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
-            "Amara.org",
-            "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
-            "社群提供",
-            "点点欄目",
-            "幕",
-        ]
+        self.configure()
+        self.activate()
 
-        # Automatic Speech Recognition
-        self.asr = FasterWhisperASR(self.language, "large-v2")
-        self.online_asr = OnlineASRProcessor(self.asr)
-        self.online_asr.init()
+    def configure(self):
+        self.get_logger().info(f"Configuring...")
+        self.language = self.get_parameter("language").get_parameter_value().string_value
+        self.model = self.get_parameter("model").get_parameter_value().string_value
+        self.sample_rate = self.get_parameter("sample_rate").get_parameter_value().integer_value
+        self.block_duration = self.get_parameter("block_duration").get_parameter_value().double_value
+        self.max_empty_count = self.get_parameter("max_empty_count").get_parameter_value().integer_value
+        self.banlist = self.get_parameter("banlist").get_parameter_value().string_array_value
 
-        self.create_subscription(
-            Audio,
-            "audio",
-            self.audio_cb,
-            QoSProfile(
-                reliability=ReliabilityPolicy.BEST_EFFORT,
-                history=HistoryPolicy.KEEP_LAST,
-                depth=10,
-            ),
+        _ = self.create_subscription(Audio, "audio", self.audio_cb, 10)
+        self.pub = self.create_publisher(String, "transcription", 10)
+        _ = self.create_timer(
+            self.get_parameter("period").get_parameter_value().double_value,
+            self.timer_cb,
         )
 
-        self.pub = self.create_publisher(String, "transcription", 10)
-        self.timer = self.create_timer(0.1, self.timer_cb)  # 10Hz
+        self.get_logger().info(f"Configured")
 
-        self.get_logger().info("start")
+    def activate(self):
+        self.get_logger().info(f"Activating...")
 
+        # Automatic Speech Recognition
+        asr = FasterWhisperASR(self.language, self.model)
+        self.online_asr = OnlineASRProcessor(asr)
+        self.online_asr.init()
+
+        # Warmup
+        dummy_audio = np.random.randn(int(5.0 * OnlineASRProcessor.SAMPLING_RATE)).astype(np.float32) * 0.01
+        self.online_asr.insert_audio_chunk(dummy_audio)
+        _ = self.online_asr.process_iter()
+
+        self.get_logger().info(f"Activated")
 
     def audio_cb(self, msg: Audio):
-        # self.get_logger().info("audio_cb")
+        self.get_logger().debug(f"Received Audio Chunk!")
         try:
-            num_frames = msg.data.layout.dim[0].size
-            num_channels = msg.data.layout.dim[1].size
-            audio = np.array(msg.data.data, dtype=np.float32).reshape(
-                (num_frames, num_channels)
-            )
-
-            # # TODO Use only first channel (mono)
-            # mono_audio = audio[:, 0]
-
-            # Enqueue audio chunk
-            self.audio_queue.put_nowait(audio[:, 0].copy())
-
+            num_frames = msg.data.layout.dim[0].size  # type: ignore
+            num_channels = msg.data.layout.dim[1].size  # type: ignore
+            audio = np.array(msg.data.data, dtype=np.float32).reshape((num_frames, num_channels))
+            mono_audio = audio[:, 0]
+            self.audio_queue.put_nowait(mono_audio.copy())
         except queue.Full:
             self.get_logger().warn("Audio queue full, dropping chunk.")
 
     def timer_cb(self):
-        try:
-            audio_chunk = self.audio_queue.get_nowait()
-        except queue.Empty:
-            self.get_logger().info("queue.Empty")
-            return  # No audio to process
+
+        # Get audio chunks
+        chunks = []
+
+        min_qsize = math.ceil(5.0 / self.block_duration)
+
+        if self.audio_queue.qsize() < min_qsize:
+            return
+
+        size = 0
+        while size < min_qsize:
+            chunk = self.audio_queue.get_nowait()
+            chunks.append(chunk)
+            size += 1
+
+        audio = np.concatenate(chunks)
 
         # Resample
-        num_target_samples = int(len(audio_chunk) * TARGET_SR / 48000)
-        resampled = resample(audio_chunk, num_target_samples)
+        target_len = int(len(audio) * OnlineASRProcessor.SAMPLING_RATE / self.sample_rate)
+        resampled_audio = resample(audio, target_len)
 
         # ASR
-        self.online_asr.insert_audio_chunk(resampled.astype(np.float32))
+        self.online_asr.insert_audio_chunk(resampled_audio.astype(np.float32))
         result = self.online_asr.process_iter()
 
-        self.get_logger().info(f"{result=}")
-
-
         # Handle result
-        if result is not None and result[2].strip() != "":
-            self.sentence_buffer.append(result[2])
-            self.empty_count = 0
-        else:
-            # TODO 應該在每個小東西就判斷 ban list
+        if result is None:
+            return
+
+        if result[2].strip() == "":
+
+            # result=(None, None, '')
             self.empty_count += 1
-            if self.empty_count >= self.max_empty_count and self.sentence_buffer:
+
+            if self.sentence_buffer and self.empty_count >= self.max_empty_count:
                 full_sentence = "".join(self.sentence_buffer)
-                if not any(banned in full_sentence for banned in self.banlist):
-                    self.publish_sentence(full_sentence)
                 self.sentence_buffer.clear()
                 self.empty_count = 0
+                self.get_logger().debug(f"{full_sentence=}")
+                if not any(ban in full_sentence for ban in self.banlist):
+                    # Publish
+                    msg = String()
+                    msg.data = full_sentence
+                    self.pub.publish(msg)
 
-    def publish_sentence(self, sentence: str):
-        self.get_logger().info(f"[ASR] {sentence}")
-        msg = String()
-        msg.data = sentence
-        self.pub.publish(msg)
-
-    def destroy_node(self):
-        # Final flush
-        final = self.online_asr.finish()
-        if final and final[2].strip():
-            self.sentence_buffer.append(final[2])
-        if self.sentence_buffer:
-            full_sentence = "".join(self.sentence_buffer)
-            if not any(
-                banned in full_sentence for banned in self.banlist
-            ):  # TODO encapsulation
-                self.publish_sentence(full_sentence)
-
-        super().destroy_node()
+        else:
+            self.sentence_buffer.append(result[2])
+            self.empty_count = 0
 
 
 def main(args: List[str] | None = None):

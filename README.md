@@ -1,5 +1,7 @@
 # home-nlp
 
+https://github.com/ufal/whisper_streaming
+
 ```
 @inproceedings{machacek-etal-2023-turning,
     title = "Turning Whisper into Real-Time Transcription System",

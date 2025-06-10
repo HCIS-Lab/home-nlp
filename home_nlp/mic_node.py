@@ -19,12 +19,18 @@ Author: Enfu Liao
 Date: 2025-06-09
 """
 
+# TODO 改成 LifecycleNode
+# TODO 處理 channel > 1 的情況
+# TODO 處理 device id type (id or str)
+# TODO QoS profile
+# TODO block_duration 也許可以改用 service 設定
+
 import rclpy
 from rclpy.node import Node
 from typing import List
 import sounddevice as sd
 import numpy as np
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension
+from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Header
 from std_srvs.srv import SetBool
 from home_interfaces.msg import Audio
 
@@ -33,36 +39,55 @@ class MicrophoneNode(Node):
     def __init__(self):
         super().__init__("mic_node")
 
-        self.sample_rate = 48000
-        self.chunk_size = 1024
-        self.device_id = 6
-        self.channels = 1 # TODO from config
+        self.declare_parameter("sample_rate", 48000)
+        self.declare_parameter("block_duration", 1.0)
+        self.declare_parameter("device_id", 4)
+        self.declare_parameter("num_channel", 1)
 
-        self.pub = self.create_publisher(Audio, "audio", 10)
-        self.srv = self.create_service(
-            SetBool, "toggle_mic", self.toggle_mic_cb
-        )
+        self.configure()
+        self.activate()
 
-        self.timer = self.create_timer(
-            self.chunk_size / self.sample_rate, self.timer_cb
-        )
+    def configure(self):
+        self.get_logger().info(f"Configuring...")
+        sample_rate = self.get_parameter("sample_rate").get_parameter_value().integer_value
+        num_channel = self.get_parameter("num_channel").get_parameter_value().integer_value
+        block_duration = self.get_parameter("block_duration").get_parameter_value().double_value
+        device_id = self.get_parameter("device_id").get_parameter_value().integer_value
 
+        self.block_size = int(sample_rate * block_duration)
+
+        # Initialize stream (sounddevice)
         self.stream = sd.InputStream(
             dtype="float32",
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            blocksize=self.chunk_size,
-            device=self.device_id,
+            samplerate=sample_rate,
+            channels=num_channel,
+            blocksize=self.block_size,
+            device="HyperX SoloCast",
         )
+
+        # Setup publisher / service / timer
+        self.pub = self.create_publisher(Audio, "audio", 10)
+        self.srv = self.create_service(SetBool, "toggle_mic", self.toggle_mic_cb)
+        _ = self.create_timer(block_duration, self.timer_cb)
+
+        # Log information
+        self.get_logger().info(
+            f"Configured: sample_rate={sample_rate}, "
+            f"num_channel={num_channel}, block_size={self.block_size}, device_id={device_id}"
+        )
+
+    def activate(self):
+        self.get_logger().info(f"Activating...")
         self.toggle_mic(True)
+        self.get_logger().info(f"Activated")
 
     def toggle_mic(self, enable: bool):
         if not self.stream:
             return
 
         if enable and self.stream.stopped:
-            self.get_logger().info("Starting mimicrophone stream...")
-            # TODO show device name
+
+            self.get_logger().info("Starting microphone stream...")
             self.stream.start()
 
         if not enable and self.stream.active:
@@ -72,9 +97,7 @@ class MicrophoneNode(Node):
     def toggle_mic_cb(self, request, response):
         self.toggle_mic(request.data)
         response.success = True
-        response.message = (
-            "Microphone started" if request.data else "Microphone stopped"
-        )
+        response.message = "Microphone started" if request.data else "Microphone stopped"
         return response
 
     def timer_cb(self):
@@ -84,13 +107,19 @@ class MicrophoneNode(Node):
         if self.stream.stopped:
             return
 
-        audio_chunk, overflowed = self.stream.read(self.chunk_size)
+        audio_chunk, overflowed = self.stream.read(self.block_size)
 
         num_frame = audio_chunk.shape[0]
         num_channel = audio_chunk.shape[1]
 
         msg = Audio()
 
+        # Set header
+        msg.header = Header()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "gpu"
+
+        # Pack audio data
         array_data = Float32MultiArray()
         array_data.data = audio_chunk.flatten().tolist()
 
@@ -105,14 +134,12 @@ class MicrophoneNode(Node):
         array_data.layout.dim[1].stride = num_channel  # type: ignore
 
         msg.data = array_data
-        msg.sample_rate = self.sample_rate
 
         self.pub.publish(msg)
-        self.get_logger().debug(
-            f"Published audio chunk of size {len(audio_chunk)}"
-        )
+        self.get_logger().debug(f"Published audio chunk of size {len(audio_chunk)}")
 
     def destroy_node(self):
+
         if self.stream:
             self.stream.stop()
             self.stream.close()
