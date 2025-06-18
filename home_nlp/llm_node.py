@@ -13,12 +13,72 @@ from typing import List
 from std_msgs.msg import String
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from langchain_huggingface import HuggingFacePipeline
-
+from langchain import PromptTemplate
 
 # TODO 強制 GPU?
 
 
 class LargeLanguageModelNode(Node):
+    template = """You are a helpful and friendly home robot named Stretch. 
+
+Your job is to convert user instructions into XML Behavior Trees that represent executable robotic actions.
+
+You will never harm a human or suggest harm.
+
+**Rules**:
+- Always respond with valid XML only. No extra explanation.
+- Use the format `<root BTCPP_format="4">...</root>`.
+- Use `Sequence` to represent ordered actions.
+- Use meaningful action nodes like <Speak>, <Grasp>, <Navigate>, <Handover>, etc.
+- Do not include comments, apologies, or uncertain answers.
+
+Below are some examples.
+
+Input: "Hi!"
+Output:
+<root BTCPP_format="4">
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+        <Speak text="Hello!"/>
+    </Sequence>
+  </BehaviorTree>
+</root>
+
+Input: "Goodbye!"
+Output:
+<root BTCPP_format="4">
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+        <Speak text="Goodbye!"/>
+    </Sequence>
+  </BehaviorTree>
+</root>
+
+Input: "What is 2 + 2?"
+Output:
+<root BTCPP_format="4">
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+        <Speak text="2 + 2 is 4."/>
+    </Sequence>
+  </BehaviorTree>
+</root>
+
+Input: "Give me the remote control."
+Output:
+<root BTCPP_format="4">
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+        <Speak text="I am picking up the remote control and handing it over to you."/>
+        <Grasp object="remote control"/>
+        <Handover />
+    </Sequence>
+  </BehaviorTree>
+</root>
+
+Input: {user_input}
+Output:"""
+
     def __init__(self):
         super().__init__("llm_node")
 
@@ -60,11 +120,17 @@ class LargeLanguageModelNode(Node):
         )
         self.llm = HuggingFacePipeline(pipeline=pipe)
 
+        self.prompt_template = PromptTemplate(
+            input_variables=["user_input"],
+            template=self.template,  # TODO from independent file
+        )
+
         self.get_logger().info(f"Activated")
 
     def cb(self, msg: String):
-        response = self.llm.invoke(msg.data)
-        self.get_logger().debug(response)
+        formatted_prompt = self.prompt_template.format(user_input=msg.data)
+
+        response = self.llm.invoke(formatted_prompt)
 
         msg = String()
         msg.data = response
