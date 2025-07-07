@@ -28,15 +28,17 @@ Date: 2025-06-10
 """
 
 import rclpy
+import queue
+import numpy as np
+import math
+
+from scipy.signal import resample
 from rclpy.node import Node
 from typing import List
 from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
+from home_nlp.ban import banlist
 from home_interfaces.msg import Audio
 from std_msgs.msg import String
-import queue
-import numpy as np
-from scipy.signal import resample
-import math
 
 # TODO 改成 LifecycleNode
 # TODO QoS profile
@@ -55,22 +57,6 @@ class AutomaticSpeechRecognitionNode(Node):
         self.declare_parameter("block_duration", 1.0)
         self.declare_parameter("period", 1.0)  # TODO rename
         self.declare_parameter("max_empty_count", 0)
-        self.declare_parameter(
-            "banlist",
-            [
-                "不吝点赞",
-                "转发",
-                "订阅",
-                "点点栏目",
-                "點點欄目",
-                "打赏支持明镜",
-                "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
-                "Amara.org",
-                "社群提供",
-                "点点欄目",
-                "幕",
-            ],
-        )
 
         self.audio_queue = queue.Queue()
         self.sentence_queue = queue.Queue()
@@ -83,17 +69,17 @@ class AutomaticSpeechRecognitionNode(Node):
 
     def configure(self):
         self.get_logger().info(f"Configuring...")
-        self.language = self.get_parameter("language").get_parameter_value().string_value
-        self.model = self.get_parameter("model").get_parameter_value().string_value
-        self.sample_rate = self.get_parameter("sample_rate").get_parameter_value().integer_value
-        self.block_duration = self.get_parameter("block_duration").get_parameter_value().double_value
-        self.max_empty_count = self.get_parameter("max_empty_count").get_parameter_value().integer_value
-        self.banlist = self.get_parameter("banlist").get_parameter_value().string_array_value
+
+        self.language = self.get_parameter("language").value
+        self.model = self.get_parameter("model").value
+        self.sample_rate = self.get_parameter("sample_rate").value
+        self.block_duration = self.get_parameter("block_duration").value
+        self.max_empty_count = self.get_parameter("max_empty_count").value
 
         _ = self.create_subscription(Audio, "audio", self.audio_cb, 10)
         self.pub = self.create_publisher(String, "transcription", 10)
         _ = self.create_timer(
-            self.get_parameter("period").get_parameter_value().double_value,
+            self.get_parameter("period").value,
             self.timer_cb,
         )
 
@@ -165,7 +151,7 @@ class AutomaticSpeechRecognitionNode(Node):
                 self.sentence_buffer.clear()
                 self.empty_count = 0
                 self.get_logger().debug(f"{full_sentence=}")
-                if not any(ban in full_sentence for ban in self.banlist):
+                if not any(ban in full_sentence for ban in banlist):
                     # Publish
                     msg = String()
                     msg.data = full_sentence
@@ -177,7 +163,6 @@ class AutomaticSpeechRecognitionNode(Node):
 
 
 def main(args: List[str] | None = None):
-
     rclpy.init(args=args)
     node = AutomaticSpeechRecognitionNode()
     try:
