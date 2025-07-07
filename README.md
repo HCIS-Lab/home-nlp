@@ -1,5 +1,14 @@
 # home-nlp
 
+## Quickstart
+
+```bash
+# 啟動麥克風
+ros2 run home_nlp mic_node --ros-args -p device:="USB Composite Device"
+```
+
+## whisper_streaming
+
 https://github.com/ufal/whisper_streaming
 
 ```

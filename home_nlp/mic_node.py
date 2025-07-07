@@ -29,10 +29,10 @@ import rclpy
 from rclpy.node import Node
 from typing import List
 import sounddevice as sd
-import numpy as np
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Header
 from std_srvs.srv import SetBool
 from home_interfaces.msg import Audio
+from rcl_interfaces.msg import ParameterDescriptor
 
 
 class MicrophoneNode(Node):
@@ -41,20 +41,27 @@ class MicrophoneNode(Node):
 
         self.declare_parameter("sample_rate", 48000)
         self.declare_parameter("block_duration", 1.0)
-        self.declare_parameter("device_id", 4)
         self.declare_parameter("num_channel", 1)
+
+        # device 可以使用 device id 也可以使用 device name
+        # USB Composite Device
+        # HyperX SoloCast
+        self.declare_parameter("device", descriptor=ParameterDescriptor(dynamic_typing=True))
 
         self.configure()
         self.activate()
 
     def configure(self):
         self.get_logger().info(f"Configuring...")
-        sample_rate = self.get_parameter("sample_rate").get_parameter_value().integer_value
-        num_channel = self.get_parameter("num_channel").get_parameter_value().integer_value
-        block_duration = self.get_parameter("block_duration").get_parameter_value().double_value
-        device_id = self.get_parameter("device_id").get_parameter_value().integer_value
 
+        sample_rate = self.get_parameter("sample_rate").value
+        num_channel = self.get_parameter("num_channel").value
+        block_duration = self.get_parameter("block_duration").value
         self.block_size = int(sample_rate * block_duration)
+
+        device = self.get_parameter("device").value
+        if device is not None and not isinstance(device, (int, str)):
+            raise NotImplementedError
 
         # Initialize stream (sounddevice)
         self.stream = sd.InputStream(
@@ -62,7 +69,7 @@ class MicrophoneNode(Node):
             samplerate=sample_rate,
             channels=num_channel,
             blocksize=self.block_size,
-            device="HyperX SoloCast",
+            device=device,
         )
 
         # Setup publisher / service / timer
@@ -73,7 +80,7 @@ class MicrophoneNode(Node):
         # Log information
         self.get_logger().info(
             f"Configured: sample_rate={sample_rate}, "
-            f"num_channel={num_channel}, block_size={self.block_size}, device_id={device_id}"
+            f"num_channel={num_channel}, block_size={self.block_size}, device={device}"
         )
 
     def activate(self):
@@ -147,6 +154,10 @@ class MicrophoneNode(Node):
         super().destroy_node()
 
 
+def list_devices():
+    print(sd.query_devices())
+
+
 def main(args: List[str] | None = None):
 
     rclpy.init(args=args)
@@ -161,4 +172,5 @@ def main(args: List[str] | None = None):
 
 
 if __name__ == "__main__":
+    list_devices()
     main()
