@@ -21,7 +21,6 @@ Date: 2025-06-09
 
 # TODO 改成 LifecycleNode
 # TODO 處理 channel > 1 的情況
-# TODO 處理 device id type (id or str)
 # TODO QoS profile
 # TODO block_duration 也許可以改用 service 設定
 
@@ -46,6 +45,7 @@ class MicrophoneNode(Node):
         # device 可以使用 device id 也可以使用 device name
         # USB Composite Device
         # HyperX SoloCast
+        # DJI MIC MINI
         self.declare_parameter("device", descriptor=ParameterDescriptor(dynamic_typing=True))
 
         self.configure()
