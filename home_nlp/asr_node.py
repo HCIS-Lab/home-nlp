@@ -44,8 +44,7 @@ from std_msgs.msg import String
 # TODO QoS profile
 # TODO 處理 channel > 1 的情況 (audio_cb) => 現在是指處理單 channel
 # TODO Warmup 真的有效嗎?
-# TODO 是否要加上 Header? 如果要，是要用開頭還是結尾？
-
+# TODO 是否要加上 Header? 如果要，是要用開頭還是結尾？ => 先不加好了，反正沒用到
 
 class AutomaticSpeechRecognitionNode(Node):
     def __init__(self):
@@ -55,7 +54,11 @@ class AutomaticSpeechRecognitionNode(Node):
         self.declare_parameter("model", "large-v2")
         self.declare_parameter("sample_rate", 48000)
         self.declare_parameter("block_duration", 1.0)
-        self.declare_parameter("period", 1.0)  # TODO rename
+
+        # TODO
+        # 目前　period 代表每隔多久會執行一次 timer callback
+        # 可能有一點混淆
+        self.declare_parameter("period", 1.0)  
         self.declare_parameter("max_empty_count", 0)
 
         self.audio_queue = queue.Queue()
@@ -119,14 +122,15 @@ class AutomaticSpeechRecognitionNode(Node):
         min_qsize = math.ceil(5.0 / self.block_duration)
 
         if self.audio_queue.qsize() < min_qsize:
+            # 如果目前 audio queue 裡面的資料太少就先跳過
             return
 
+        # 拿取目前 audio queue 裡面的所有音訊，連接成一整塊
         size = 0
         while size < min_qsize:
             chunk = self.audio_queue.get_nowait()
             chunks.append(chunk)
             size += 1
-
         audio = np.concatenate(chunks)
 
         # Resample
@@ -151,6 +155,7 @@ class AutomaticSpeechRecognitionNode(Node):
                 self.sentence_buffer.clear()
                 self.empty_count = 0
                 self.get_logger().debug(f"{full_sentence=}")
+
                 if not any(ban in full_sentence for ban in banlist):
                     # Publish
                     msg = String()
