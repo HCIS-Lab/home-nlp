@@ -28,3 +28,13 @@ https://github.com/ufal/whisper_streaming
     pages = "17--24",
 }
 ```
+
+## LLM Model comparison
+| Model               | Loading Time (s) | Response Time (s) | VRAM Usage (MB) | RAM Usage (MB) | Valid XML (%) |
+|---------------------|------------------|--------------------|------------------|----------------|----------------|
+| gemma-3-1b-it       | 4.19             | 3.22               | 2482             | 2363           | 66             |
+| gemma-3-4b-it       | 7.25             | 4.34               | 9480             | 5455           | 99             |
+| deepseek 6.7b-it    | 15.64            | 3.03               | 14096            | 10094          | 76             |
+| Phi-4-mini-it       | 8.26             | 3.34               | 8735             | 5251           | 60             |
+| Mistral-7B-it-v0.3  | 5.68             | 2.02               | 14135            | 5344           | 98             |
+| LLama-3.1-8B-it     | 6.08             | 1.80               | 15623            | 5350           | 99             |
