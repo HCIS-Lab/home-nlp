@@ -22,6 +22,8 @@ from dotenv import load_dotenv
 from home_nlp.prompt_template import system_prompt, example_prompt, examples
 import re
 
+import torch
+torch.set_float32_matmul_precision("high")
 
 class LargeLanguageModelNode(Node):
 
@@ -84,7 +86,7 @@ class LargeLanguageModelNode(Node):
             return_full_text=False,
         )
         llm = HuggingFacePipeline(pipeline=pipe)
-        chat_model = ChatHuggingFace(llm=llm)
+        chat_model = ChatHuggingFace(llm=llm, model_id=self.model_name)
 
         self.chat_map = {}
 
