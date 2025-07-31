@@ -19,22 +19,22 @@ Author: Enfu Liao
 Date: 2025-06-09
 """
 
-# TODO 改成 LifecycleNode
 # TODO 處理 channel > 1 的情況
 # TODO QoS profile
 # TODO block_duration 也許可以改用 service 設定
 
 import rclpy
 from rclpy.node import Node
-from typing import List
+from typing import List, Optional
 import sounddevice as sd
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Header
 from std_srvs.srv import SetBool
 from home_interfaces.msg import Audio
 from rcl_interfaces.msg import ParameterDescriptor
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
 
 
-class MicrophoneNode(Node):
+class MicrophoneNode(LifecycleNode):
     def __init__(self):
         super().__init__("mic_node")
 
@@ -46,81 +46,117 @@ class MicrophoneNode(Node):
         # USB Composite Device
         # HyperX SoloCast
         # DJI MIC MINI
-        self.declare_parameter("device", descriptor=ParameterDescriptor(dynamic_typing=True))
-
-        self.configure()
-        self.activate()
-
-    def configure(self):
-        self.get_logger().info(f"Configuring...")
-
-        sample_rate = self.get_parameter("sample_rate").value
-        num_channel = self.get_parameter("num_channel").value
-        block_duration = self.get_parameter("block_duration").value
-        self.block_size = int(sample_rate * block_duration)
-
-        device = self.get_parameter("device").value
-        if device is not None and not isinstance(device, (int, str)):
-            raise NotImplementedError
-
-        # Initialize stream (sounddevice)
-        self.stream = sd.InputStream(
-            dtype="float32",
-            samplerate=sample_rate,
-            channels=num_channel,
-            blocksize=self.block_size,
-            device=device,
+        self.declare_parameter(
+            "device", descriptor=ParameterDescriptor(dynamic_typing=True)
         )
+
+        self.stream: Optional[sd.InputStream] = None
+        self.timer = None
+        self.block_duration = None
+        self.block_size = None
+        self.device = None
+        self.pub = None
+
+    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Configuring microphone...")
+
+        try:
+            sample_rate = int(self.get_parameter("sample_rate").value)  # type: ignore
+            num_channel = int(self.get_parameter("num_channel").value)  # type: ignore
+            self.block_duration = float(self.get_parameter("block_duration").value)  # type: ignore
+            self.block_size = int(sample_rate * self.block_duration)
+            self.device = self.get_parameter("device").value
+        except Exception as e:
+            self.get_logger().error(f"Parameter error: {e}")
+            return TransitionCallbackReturn.FAILURE
+
+        self.device = self.get_parameter("device").value
+        if self.device is not None and not isinstance(self.device, (int, str)):
+            self.get_logger().error("Invalid device parameter (must be int or str).")
+            return TransitionCallbackReturn.FAILURE
+
+        try:
+            self.stream = sd.InputStream(
+                dtype="float32",
+                samplerate=sample_rate,
+                channels=num_channel,
+                blocksize=self.block_size,
+                device=self.device,
+            )
+        except Exception as e:
+            self.get_logger().error(f"Failed to create InputStream: {e}")
+            return TransitionCallbackReturn.FAILURE
 
         # Setup publisher / service / timer
         self.pub = self.create_publisher(Audio, "audio", 10)
-        self.srv = self.create_service(SetBool, "toggle_mic", self.toggle_mic_cb)
-        _ = self.create_timer(block_duration, self.timer_cb)
 
         # Log information
         self.get_logger().info(
-            f"Configured: sample_rate={sample_rate}, "
-            f"num_channel={num_channel}, block_size={self.block_size}, device={device}"
+            f"Configured microphone: sample_rate={sample_rate}, "
+            f"num_channel={num_channel}, block_size={self.block_size}, device={self.device}"
         )
 
-    def activate(self):
-        self.get_logger().info(f"Activating...")
-        self.toggle_mic(True)
-        self.get_logger().info(f"Activated")
+        return TransitionCallbackReturn.SUCCESS
 
-    def toggle_mic(self, enable: bool):
-        if not self.stream:
-            return
+    def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Activating microphone...")
+        try:
+            if self.stream and self.stream.stopped:
+                self.stream.start()
+            self.timer = self.create_timer(self.block_duration, self.timer_cb)  # type: ignore
+        except Exception as e:
+            self.get_logger().error(f"Activation failed: {e}")
+            return TransitionCallbackReturn.FAILURE
+        self.get_logger().info("Activated")
+        return TransitionCallbackReturn.SUCCESS
 
-        if enable and self.stream.stopped:
-
-            self.get_logger().info("Starting microphone stream...")
-            self.stream.start()
-
-        if not enable and self.stream.active:
-            self.get_logger().info("Stopping microphone stream...")
+    def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Deactivating microphone...")
+        if self.timer:
+            self.timer.cancel()
+        if self.stream and self.stream.active:
             self.stream.stop()
+        self.get_logger().info("Deactivated")
+        return TransitionCallbackReturn.SUCCESS
 
-    def toggle_mic_cb(self, request, response):
-        self.toggle_mic(request.data)
-        response.success = True
-        response.message = "Microphone started" if request.data else "Microphone stopped"
-        return response
+    def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Cleaning up microphone node...")
+        if self.stream:
+            try:
+                if self.stream.active:
+                    self.stream.stop()
+                self.stream.close()
+            except Exception as e:
+                self.get_logger().warn(f"Error while closing stream: {e}")
+        self.stream = None
+        self.get_logger().info("Cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Shutting down microphone node...")
+        if self.stream:
+            try:
+                self.stream.close()
+            except Exception:
+                pass
+        self.get_logger().info("Shutten up")
+        return TransitionCallbackReturn.SUCCESS
 
     def timer_cb(self):
-        if not self.stream:
+        if not self.stream or self.stream.stopped:
             return
 
-        if self.stream.stopped:
+        try:
+            audio_chunk, overflowed = self.stream.read(self.block_size)
+        except Exception as e:
+            self.get_logger().error(f"Audio read failed: {e}")
             return
 
-        audio_chunk, overflowed = self.stream.read(self.block_size)
         if overflowed:
             self.get_logger().warn("Input stream overflowed")
             return
 
-        num_frame = audio_chunk.shape[0]
-        num_channel = audio_chunk.shape[1]
+        num_frame, num_channel = audio_chunk.shape
 
         msg = Audio()
 
@@ -145,16 +181,9 @@ class MicrophoneNode(Node):
 
         msg.data = array_data
 
-        self.pub.publish(msg)
-        self.get_logger().debug(f"Published audio chunk of size {len(audio_chunk)}")
-
-    def destroy_node(self):
-
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-
-        super().destroy_node()
+        if self.pub:
+            self.pub.publish(msg)
+            self.get_logger().debug(f"Published audio chunk of size {len(audio_chunk)}")
 
 
 def list_devices():
@@ -166,6 +195,8 @@ def main(args: List[str] | None = None):
     rclpy.init(args=args)
     node = MicrophoneNode()
     try:
+        node.trigger_configure()
+        node.trigger_activate()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass

@@ -34,19 +34,20 @@ import math
 
 from scipy.signal import resample
 from rclpy.node import Node
-from typing import List
+from typing import List, Optional
 from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
 from home_nlp.ban import banlist
 from home_interfaces.msg import Audio
 from std_msgs.msg import String
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
 
-# TODO 改成 LifecycleNode
 # TODO QoS profile
 # TODO 處理 channel > 1 的情況 (audio_cb) => 現在是指處理單 channel
 # TODO Warmup 真的有效嗎?
 # TODO 是否要加上 Header? 如果要，是要用開頭還是結尾？ => 先不加好了，反正沒用到
 
-class AutomaticSpeechRecognitionNode(Node):
+
+class AutomaticSpeechRecognitionNode(LifecycleNode):
     def __init__(self):
         super().__init__("asr_node")
 
@@ -58,57 +59,105 @@ class AutomaticSpeechRecognitionNode(Node):
         # TODO
         # 目前　period 代表每隔多久會執行一次 timer callback
         # 可能有一點混淆
-        self.declare_parameter("period", 1.0)  
+        self.declare_parameter("period", 1.0)
         self.declare_parameter("max_empty_count", 0)
 
         self.audio_queue = queue.Queue()
         self.sentence_queue = queue.Queue()
-
         self.empty_count = 0
         self.sentence_buffer = []
 
-        self.configure()
-        self.activate()
+        self.online_asr: Optional[OnlineASRProcessor] = None
+        self.pub = None
+        self.timer = None
 
-    def configure(self):
-        self.get_logger().info(f"Configuring...")
+    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info(f"Configuring automatic speech recognition...")
 
-        self.language = self.get_parameter("language").value
-        self.model = self.get_parameter("model").value
-        self.sample_rate = self.get_parameter("sample_rate").value
-        self.block_duration = self.get_parameter("block_duration").value
-        self.max_empty_count = self.get_parameter("max_empty_count").value
+        try:
+            self.language = str(self.get_parameter("language").value)
+            self.model = str(self.get_parameter("model").value)
+            self.sample_rate = int(self.get_parameter("sample_rate").value)  # type: ignore
+            self.block_duration = float(self.get_parameter("block_duration").value)  # type: ignore
+            self.max_empty_count = int(self.get_parameter("max_empty_count").value)  # type: ignore
+            self.period = float(self.get_parameter("period").value)  # type: ignore
+        except Exception as e:
+            self.get_logger().error(f"Parameter parsing failed: {e}")
+            return TransitionCallbackReturn.FAILURE
 
         _ = self.create_subscription(Audio, "audio", self.audio_cb, 10)
         self.pub = self.create_publisher(String, "transcription", 10)
-        _ = self.create_timer(
-            self.get_parameter("period").value,
-            self.timer_cb,
+
+        self.get_logger().info(
+            f"Configured: language={self.language}, model={self.model}, "
+            f"sample_rate={self.sample_rate}, block_duration={self.block_duration}"
         )
+        return TransitionCallbackReturn.SUCCESS
 
-        self.get_logger().info(f"Configured")
+    def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Activating ASR engine...")
 
-    def activate(self):
-        self.get_logger().info(f"Activating...")
+        try:
+            # Automatic Speech Recognition
+            asr = FasterWhisperASR(self.language, self.model)
+            self.online_asr = OnlineASRProcessor(asr)
+            self.online_asr.init()
 
-        # Automatic Speech Recognition
-        asr = FasterWhisperASR(self.language, self.model)
-        self.online_asr = OnlineASRProcessor(asr)
-        self.online_asr.init()
+            # Warmup inference
+            self.get_logger().info("Running ASR warmup...")
+            dummy_audio = (
+                np.random.randn(int(5.0 * OnlineASRProcessor.SAMPLING_RATE)).astype(
+                    np.float32
+                )
+                * 0.01
+            )
+            self.online_asr.insert_audio_chunk(dummy_audio)
+            _ = self.online_asr.process_iter()
 
-        # Warmup
-        dummy_audio = np.random.randn(int(5.0 * OnlineASRProcessor.SAMPLING_RATE)).astype(np.float32) * 0.01
-        self.online_asr.insert_audio_chunk(dummy_audio)
-        _ = self.online_asr.process_iter()
+            self.timer = self.create_timer(self.period, self.timer_cb)
+            self.get_logger().info("Activated")
+            return TransitionCallbackReturn.SUCCESS
 
-        self.get_logger().info(f"Activated")
+        except Exception as e:
+            self.get_logger().error(f"Failed to activate ASR: {e}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Deactivating ASR Node...")
+        if self.timer:
+            self.timer.cancel()
+
+        # Reset sentence buffers
+        self.sentence_queue.queue.clear()
+        self.sentence_buffer.clear()
+        self.empty_count = 0
+        self.get_logger().info("Sentence state reset.")
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Cleaning up ASR Node...")
+
+        # Reset audio buffer
+        with self.audio_queue.mutex:
+            self.audio_queue.queue.clear()
+        self.get_logger().info("Audio queue cleared.")
+
+        self.online_asr = None
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Shutting down ASR Node...")
+        return TransitionCallbackReturn.SUCCESS
 
     def audio_cb(self, msg: Audio):
         self.get_logger().debug(f"Received Audio Chunk!")
         try:
             num_frames = msg.data.layout.dim[0].size  # type: ignore
             num_channels = msg.data.layout.dim[1].size  # type: ignore
-            audio = np.array(msg.data.data, dtype=np.float32).reshape((num_frames, num_channels))
+            audio = np.array(msg.data.data, dtype=np.float32).reshape(
+                (num_frames, num_channels)
+            )
             mono_audio = audio[:, 0]
             self.audio_queue.put_nowait(mono_audio.copy())
         except queue.Full:
@@ -134,7 +183,9 @@ class AutomaticSpeechRecognitionNode(Node):
         audio = np.concatenate(chunks)
 
         # Resample
-        target_len = int(len(audio) * OnlineASRProcessor.SAMPLING_RATE / self.sample_rate)
+        target_len = int(
+            len(audio) * OnlineASRProcessor.SAMPLING_RATE / self.sample_rate  # type: ignore
+        )
         resampled_audio = resample(audio, target_len)
 
         # ASR
@@ -160,7 +211,9 @@ class AutomaticSpeechRecognitionNode(Node):
                     # Publish
                     msg = String()
                     msg.data = full_sentence
-                    self.pub.publish(msg)
+
+                    if self.pub:
+                        self.pub.publish(msg)
 
         else:
             self.sentence_buffer.append(result[2])
@@ -171,6 +224,8 @@ def main(args: List[str] | None = None):
     rclpy.init(args=args)
     node = AutomaticSpeechRecognitionNode()
     try:
+        node.trigger_configure()
+        node.trigger_activate()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass

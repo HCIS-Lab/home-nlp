@@ -38,3 +38,17 @@ https://github.com/ufal/whisper_streaming
 | Phi-4-mini-it       | 8.26             | 3.34               | 8735             | 5251           | 60             |
 | Mistral-7B-it-v0.3  | 5.68             | 2.02               | 14135            | 5344           | 98             |
 | LLama-3.1-8B-it     | 6.08             | 1.80               | 15623            | 5350           | 99             |
+
+## TODOs
+
+```
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+
+Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so.9.1, libcudnn_ops.so.9, libcudnn_ops.so}
+Invalid handle. Cannot load symbol cudnnCreateTensorDescriptor
+[ros2run]: Aborted
+```
