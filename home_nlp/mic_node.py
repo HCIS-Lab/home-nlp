@@ -115,6 +115,9 @@ class MicrophoneNode(Node):
             return
 
         audio_chunk, overflowed = self.stream.read(self.block_size)
+        if overflowed:
+            self.get_logger().warn("Input stream overflowed")
+            return
 
         num_frame = audio_chunk.shape[0]
         num_channel = audio_chunk.shape[1]
