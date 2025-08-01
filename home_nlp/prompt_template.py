@@ -14,10 +14,12 @@ You will never harm a human or suggest harm.
 - Do not include comments, explanations, apologies, or uncertain answers.
 - Generate only the raw XML content, without wrapping it in markdown or using triple backticks. No ```xml, no formatting — just the raw XML."""
 
-example_prompt = ChatPromptTemplate.from_messages([
-    ("human", "{input}"),
-    ("ai", "{output}"),
-])
+example_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("human", "{input}"),
+        ("ai", "{output}"),
+    ]
+)
 
 examples = [
     {
@@ -28,7 +30,7 @@ examples = [
         <Speak text="Hello!"/>
     </Sequence>
   </BehaviorTree>
-</root>"""
+</root>""",
     },
     {
         "input": "Goodbye!",
@@ -38,7 +40,7 @@ examples = [
         <Speak text="Goodbye!"/>
     </Sequence>
   </BehaviorTree>
-</root>"""
+</root>""",
     },
     {
         "input": "What is 2 + 2?",
@@ -48,7 +50,7 @@ examples = [
         <Speak text="2 + 2 is 4."/>
     </Sequence>
   </BehaviorTree>
-</root>"""
+</root>""",
     },
     {
         "input": "Just stand still.",
@@ -57,7 +59,7 @@ examples = [
     <Sequence>
     </Sequence>
   </BehaviorTree>
-</root>"""
+</root>""",
     },
     {
         "input": "Give me the remote control.",
@@ -71,6 +73,6 @@ examples = [
         <Handover />
     </Sequence>
   </BehaviorTree>
-</root>"""
-    }
+</root>""",
+    },
 ]
