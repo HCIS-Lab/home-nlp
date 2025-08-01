@@ -1,3 +1,18 @@
+"""
+prompt_template.py
+
+Defines system and example prompts for the Large Language Model (LLM) node.
+
+The system prompt instructs the LLM (acting as a home robot named Stretch) to
+convert user instructions into executable XML Behavior Trees (BTs).
+It enforces strict formatting rules to ensure valid and consistent XML output.
+
+Few-shot examples are provided to guide the LLM in generating correct responses.
+
+Author: Enfu Liao, Chinlu Chen
+Date: 2025-08-01
+"""
+
 from langchain.prompts import ChatPromptTemplate
 
 system_prompt = """You are the brain of a helpful and friendly home robot named Stretch. 

@@ -1,3 +1,13 @@
+"""
+ban.py
+
+Defines a list of banned phrases used to filter unwanted content
+(e.g., filler or promotional text) from ASR transcriptions.
+
+Author: Enfu Liao
+Date: 2025-06-10
+"""
+
 banlist = [
     "不吝点赞",
     "转发",

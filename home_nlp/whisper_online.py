@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+whisper_online.py
+
+Source: https://github.com/ufal/whisper_streaming
+"""
+
 import io
 import logging
 import math
