@@ -33,7 +33,6 @@ import numpy as np
 import math
 
 from scipy.signal import resample
-from rclpy.node import Node
 from typing import List, Optional
 from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
 from home_nlp.ban import banlist
@@ -72,7 +71,7 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
         self.timer = None
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
-        self.get_logger().info(f"Configuring automatic speech recognition...")
+        self.get_logger().info("Configuring automatic speech recognition...")
 
         try:
             self.language = str(self.get_parameter("language").value)
@@ -151,7 +150,7 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     def audio_cb(self, msg: Audio):
-        self.get_logger().debug(f"Received Audio Chunk!")
+        self.get_logger().debug("Received Audio Chunk!")
         try:
             num_frames = msg.data.layout.dim[0].size  # type: ignore
             num_channels = msg.data.layout.dim[1].size  # type: ignore
@@ -164,7 +163,6 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
             self.get_logger().warn("Audio queue full, dropping chunk.")
 
     def timer_cb(self):
-
         # Get audio chunks
         chunks = []
 
@@ -197,7 +195,6 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
             return
 
         if result[2].strip() == "":
-
             # result=(None, None, '')
             self.empty_count += 1
 

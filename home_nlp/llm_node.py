@@ -11,7 +11,6 @@ Date: 2025-06-10
 
 import os
 import rclpy
-from rclpy.node import Node
 from typing import List
 from std_msgs.msg import String
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -34,7 +33,6 @@ torch.set_float32_matmul_precision("high")
 
 
 class LargeLanguageModelNode(LifecycleNode):
-
     def __init__(self):
         super().__init__("llm_node")
 
@@ -174,7 +172,6 @@ class LargeLanguageModelNode(LifecycleNode):
 
 
 def main(args: List[str] | None = None):
-
     rclpy.init(args=args)
     node = LargeLanguageModelNode()
     try:

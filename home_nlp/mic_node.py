@@ -24,11 +24,9 @@ Date: 2025-06-09
 # TODO block_duration 也許可以改用 service 設定
 
 import rclpy
-from rclpy.node import Node
 from typing import List, Optional
 import sounddevice as sd
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Header
-from std_srvs.srv import SetBool
 from home_interfaces.msg import Audio
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
@@ -191,7 +189,6 @@ def list_devices():
 
 
 def main(args: List[str] | None = None):
-
     rclpy.init(args=args)
     node = MicrophoneNode()
     try:
