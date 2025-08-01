@@ -9,11 +9,7 @@ on the "audio" topic. The microphone stream can be toggled on/off
 via the "toggle_mic" service.
 
 Dependencies:
-    - rclpy
-    - sounddevice
-    - numpy
-    - home_interfaces.msg.Audio
-    - std_srvs.srv.SetBool
+    - sounddevice==0.5.2
 
 Author: Enfu Liao
 Date: 2025-06-09
@@ -23,13 +19,14 @@ Date: 2025-06-09
 # TODO QoS profile
 # TODO block_duration 也許可以改用 service 設定
 
-import rclpy
 from typing import List, Optional
+
+import rclpy
 import sounddevice as sd
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Header
 from home_interfaces.msg import Audio
 from rcl_interfaces.msg import ParameterDescriptor
-from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
+from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
+from std_msgs.msg import Float32MultiArray, Header, MultiArrayDimension
 
 
 class MicrophoneNode(LifecycleNode):

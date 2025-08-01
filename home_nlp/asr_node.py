@@ -14,31 +14,28 @@ custom rules (e.g., banlist filtering). The ASR backend is initialized and
 warmed up at startup to reduce initial inference latency.
 
 Dependencies:
-    - rclpy
-    - numpy
-    - scipy
-    - queue
-    - home_interfaces.msg.Audio
-    - std_msgs.msg.String
-    - home_nlp.whisper_online.FasterWhisperASR
-    - home_nlp.whisper_online.OnlineASRProcessor
+    - numpy==2.2.6
+    - scipy==1.15.3
+    - librosa==0.11.0
+    - faster-whisper==1.1.1
 
 Author: Enfu Liao
 Date: 2025-06-10
 """
 
-import rclpy
-import queue
-import numpy as np
 import math
-
-from scipy.signal import resample
+import queue
 from typing import List, Optional
-from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
-from home_nlp.ban import banlist
+
+import numpy as np
+import rclpy
 from home_interfaces.msg import Audio
+from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
+from scipy.signal import resample
 from std_msgs.msg import String
-from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
+
+from home_nlp.ban import banlist
+from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
 
 # TODO QoS profile
 # TODO 處理 channel > 1 的情況 (audio_cb) => 現在是指處理單 channel

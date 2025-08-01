@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-import sys
-import numpy as np
-import librosa
-from functools import lru_cache
-import time
-import logging
-
 import io
-import soundfile as sf
+import logging
 import math
+import sys
+import time
+from functools import lru_cache
+
+import librosa
+import numpy as np
+import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +198,8 @@ class MLXWhisper(ASRBase):
             model_dir (str, optional): Direct path to a custom model directory.
                 If specified, it overrides the `modelsize` parameter.
         """
-        from mlx_whisper.transcribe import ModelHolder, transcribe
         import mlx.core as mx  # Is installed with mlx-whisper
+        from mlx_whisper.transcribe import ModelHolder, transcribe
 
         if model_dir is not None:
             logger.debug(
