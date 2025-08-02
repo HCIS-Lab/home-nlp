@@ -36,6 +36,7 @@ from typing import List
 
 import rclpy
 import torch
+import queue
 from dotenv import load_dotenv
 from langchain.prompts import (
     ChatPromptTemplate,
@@ -69,6 +70,10 @@ class LargeLanguageModelNode(LifecycleNode):
         # microsoft/Phi-4-mini-instruct
         # mistralai/Mistral-7B-Instruct-v0.3
         # meta-llama/Llama-3.1-8B-Instruct
+
+        self.declare_parameter("period", 1.0)
+
+        self.transcription_buffer = queue.Queue()
 
         self.pub = None
         self.sub = None
@@ -136,6 +141,10 @@ class LargeLanguageModelNode(LifecycleNode):
             )
 
             self.pub = self.create_publisher(String, "llm_response", 10)
+            _ = self.create_timer(
+                self.get_parameter("period").value,
+                self.timer_cb,
+            )
 
             self.get_logger().info("Configured")
             return TransitionCallbackReturn.SUCCESS
@@ -148,7 +157,7 @@ class LargeLanguageModelNode(LifecycleNode):
         self.get_logger().info("Activating LLM Node...")
 
         try:
-            self.sub = self.create_subscription(String, "transcription", self.cb, 10)
+            self.sub = self.create_subscription(String, "transcription", self.transcription_cb, 10)
             self.get_logger().info("Activated")
             return TransitionCallbackReturn.SUCCESS
         except Exception as e:
@@ -179,15 +188,24 @@ class LargeLanguageModelNode(LifecycleNode):
         if session_id not in self.chat_map:
             self.chat_map[session_id] = InMemoryChatMessageHistory()
         return self.chat_map[session_id]
+    
+    def transcription_cb(self, msg: String):
+        self.get_logger().debug("Received transcription")
+        try:
+            self.transcription_buffer.put_nowait(msg.data)
+        except queue.Full:
+            self.get_logger().warn("Transcription buffer full, dropping chunk.")
 
-    def cb(self, msg: String):
-        self.get_logger().info(f"Receive new message: {msg.data}")
+    def timer_cb(self):
+        if self.transcription_buffer.empty():
+            return
+        
+        user_input = self.transcription_buffer.get_nowait()
 
-        user_input = msg.data
         response = self.chat_with_history.invoke(
             {"user_input": user_input}, config={"session_id": "default"}
         )
-        self.get_logger().info(f"LLM output:\n{response}")
+        self.get_logger().debug(f"User input: {user_input}\nLLM output:\n{response}")
 
         response_msg = String()
         response_msg.data = response
