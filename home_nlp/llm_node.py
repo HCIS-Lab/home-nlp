@@ -29,8 +29,6 @@ Author: Enfu Liao, Chinlu Chen
 Date: 2025-08-01
 """
 
-# TODO maybe subscription only store the transcription to buffer, and use another timer callback to process data is better?
-
 import os
 from typing import List
 
@@ -157,7 +155,9 @@ class LargeLanguageModelNode(LifecycleNode):
         self.get_logger().info("Activating LLM Node...")
 
         try:
-            self.sub = self.create_subscription(String, "transcription", self.transcription_cb, 10)
+            self.sub = self.create_subscription(
+                String, "transcription", self.transcription_cb, 10
+            )
             self.get_logger().info("Activated")
             return TransitionCallbackReturn.SUCCESS
         except Exception as e:
@@ -188,7 +188,7 @@ class LargeLanguageModelNode(LifecycleNode):
         if session_id not in self.chat_map:
             self.chat_map[session_id] = InMemoryChatMessageHistory()
         return self.chat_map[session_id]
-    
+
     def transcription_cb(self, msg: String):
         self.get_logger().debug("Received transcription")
         try:
@@ -199,7 +199,7 @@ class LargeLanguageModelNode(LifecycleNode):
     def timer_cb(self):
         if self.transcription_buffer.empty():
             return
-        
+
         user_input = self.transcription_buffer.get_nowait()
 
         response = self.chat_with_history.invoke(
