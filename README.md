@@ -39,6 +39,7 @@ Launch the **llm_node**:
 
 ```bash
 ros2 run home_nlp llm_node --ros-args \
+    -p period:=1.0 \
     -p model:="google/gemma-3-1b-it"
 ```
 
