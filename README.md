@@ -43,6 +43,22 @@ ros2 run home_nlp llm_node --ros-args \
     -p model:="google/gemma-3-1b-it"
 ```
 
+## TODO Docker 使用說明
+
+Build the image:
+
+```bash
+docker build -t lnfu/home_nlp
+```
+
+Run individual nodes:
+
+```bash
+docker run --rm lnfu/home_nlp ros2 run home_nlp mic_node
+docker run --rm lnfu/home_nlp ros2 run home_nlp asr_node
+docker run --rm -e HF_TOKEN="${HF_TOKEN}" lnfu/home_nlp ros2 run home_nlp llm_node
+```
+
 ## LLM Model Comparison
 
 *Valid XML* indicates the percentage of runs (out of 100) producing syntactically valid XML.  

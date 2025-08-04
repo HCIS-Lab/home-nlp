@@ -25,5 +25,3 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
 COPY --from=builder /workspace/install /workspace/install
-
-CMD ["ros2", "run", "home_nlp", "asr_node"]
