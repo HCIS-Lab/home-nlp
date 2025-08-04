@@ -43,7 +43,7 @@ ros2 run home_nlp llm_node --ros-args \
     -p model:="google/gemma-3-1b-it"
 ```
 
-## TODO Docker 使用說明
+## Running in Docker Containers
 
 Build the image:
 
