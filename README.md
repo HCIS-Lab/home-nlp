@@ -81,8 +81,7 @@ which provides the foundation for real-time Whisper transcription.
 
 ### Reference
 
-```
-bibtex
+```bibtex
 @inproceedings{machacek-etal-2023-turning,
     title = "Turning Whisper into Real-Time Transcription System",
     author = "Mach{\'a}{\v{c}}ek, Dominik  and
