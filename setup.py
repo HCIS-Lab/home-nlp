@@ -1,4 +1,7 @@
+import os
+
 from setuptools import find_packages, setup
+from glob import glob
 
 package_name = "home_nlp"
 
@@ -12,6 +15,7 @@ setup(
             ["resource/" + package_name],
         ),
         ("share/" + package_name, ["package.xml"]),
+        (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
