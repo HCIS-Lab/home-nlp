@@ -15,6 +15,12 @@ def generate_launch_description():
         "block_duration", default_value="1.0", description="Block Duration in seconds"
     )
 
+    min_processing_duration = DeclareLaunchArgument(
+        "min_processing_duration",
+        default_value="1.0",
+        description="Minimum processing duration in seconds",
+    )
+
     num_channel_arg = DeclareLaunchArgument(
         "num_channel", default_value="1", description="Number of audio channels"
     )
@@ -53,6 +59,7 @@ def generate_launch_description():
 
     sample_rate = LaunchConfiguration("sample_rate")
     block_duration = LaunchConfiguration("block_duration")
+    min_processing_duration = LaunchConfiguration("min_processing_duration")
     num_channel = LaunchConfiguration("num_channel")
     device = LaunchConfiguration("device")
     language = LaunchConfiguration("language")
@@ -87,6 +94,7 @@ def generate_launch_description():
                 "model": asr_model,
                 "sample_rate": sample_rate,
                 "block_duration": block_duration,
+                "min_processing_duration": min_processing_duration,
                 "period": period,
                 "max_empty_count": max_empty_count,
             }

@@ -51,6 +51,7 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
         self.declare_parameter("model", "large-v2")
         self.declare_parameter("sample_rate", 48000)
         self.declare_parameter("block_duration", 1.0)
+        self.declare_parameter("min_processing_duration", 1.0)
 
         # TODO
         # 目前　period 代表每隔多久會執行一次 timer callback
@@ -77,6 +78,9 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
             self.block_duration = float(self.get_parameter("block_duration").value)  # type: ignore
             self.max_empty_count = int(self.get_parameter("max_empty_count").value)  # type: ignore
             self.period = float(self.get_parameter("period").value)  # type: ignore
+            self.min_processing_duration = float(
+                self.get_parameter("min_processing_duration").value
+            )  # type: ignore
         except Exception as e:
             self.get_logger().error(f"Parameter parsing failed: {e}")
             return TransitionCallbackReturn.FAILURE
@@ -163,7 +167,7 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
         # Get audio chunks
         chunks = []
 
-        min_qsize = math.ceil(5.0 / self.block_duration)
+        min_qsize = math.ceil(self.min_processing_duration / self.block_duration)
 
         if self.audio_queue.qsize() < min_qsize:
             # 如果目前 audio queue 裡面的資料太少就先跳過
