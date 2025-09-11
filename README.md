@@ -11,36 +11,70 @@ A ROS 2 package for **speech-driven human-robot interaction**, combining
 
 This pipeline enables a home robot to understand spoken input and respond with context-aware actions.  
 
+```
+┌─────────────┐    /audio_data    ┌─────────────┐    /transcription    ┌─────────────┐
+│  mic_node   │ ──────────────→   │  asr_node   │ ──────────────────→  │  llm_node   │
+│             │                   │             │     /llm_input       │             │
+│ Microphone  │                   │   Whisper   │                      │ LLM + BT    │
+│   Audio     │                   │ Streaming   │                      │ Generation  │
+│  Capture    │                   │     ASR     │                      │             │
+└─────────────┘                   └─────────────┘                      └─────────────┘
+```
+
 ## Quickstart
 
-Launch the **mic_node**:
+### Using Launch File (Recommended)
+
+Launch all nodes together with default parameters:
 
 ```bash
+ros2 launch home_nlp launch.py
+```
+
+**Customize parameters:**
+
+```bash
+ros2 launch home_nlp launch.py \
+  sample_rate:=48000 \
+  device:="USB Composite Device" \
+  language:="en" \
+  asr_model:="large-v2" \
+  llm_model:="google/gemma-3-4b-it"
+```
+
+**View all available parameters:**
+
+```bash
+ros2 launch home_nlp launch.py --show-args
+```
+
+### Running Individual Nodes
+
+Launch the **mic_node**:
+```bash
 ros2 run home_nlp mic_node --ros-args \
-    -p sample_rate:=48000 \
-    -p block_duration:=1.0 \
-    -p num_channel:=1 \
-    -p device:="USB Composite Device"
+  -p sample_rate:=48000 \
+  -p block_duration:=1.0 \
+  -p num_channel:=1 \
+  -p device:="USB Composite Device"
 ```
 
 Launch the **asr_node**:
-
 ```bash
 ros2 run home_nlp asr_node --ros-args \
-    -p language:="zh" \
-    -p model:="large-v2" \
-    -p sample_rate:=48000 \
-    -p block_duration:=1.0 \
-    -p period:=1.0 \
-    -p max_empty_count:=0
+  -p language:="zh" \
+  -p model:="large-v2" \
+  -p sample_rate:=48000 \
+  -p block_duration:=1.0 \
+  -p period:=1.0 \
+  -p max_empty_count:=0
 ```
 
 Launch the **llm_node**:
-
 ```bash
 ros2 run home_nlp llm_node --ros-args \
-    -p period:=1.0 \
-    -p model:="google/gemma-3-1b-it"
+  -p period:=1.0 \
+  -p model:="google/gemma-3-1b-it"
 ```
 
 ## Running in Docker Containers
