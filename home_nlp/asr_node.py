@@ -1,27 +1,28 @@
-"""
-asr_node.py
-
-A ROS 2 node that performs automatic speech recognition (ASR) using Whisper.
-
-This node receives audio data from the "audio" topic (published as
-`home_interfaces/msg/Audio` messages), resamples it to 16 kHz mono,
-and transcribes it into text using a streaming ASR model based on
-Faster-Whisper. The transcribed text is published to the "transcription" topic
-as `std_msgs/msg/String`.
-
-The transcription is buffered and finalized based on silence detection and
-custom rules (e.g., banlist filtering). The ASR backend is initialized and
-warmed up at startup to reduce initial inference latency.
-
-Dependencies:
-    - numpy==2.2.6
-    - scipy==1.15.3
-    - librosa==0.11.0
-    - faster-whisper==1.1.1
-
-Author: Enfu Liao
-Date: 2025-06-10
-"""
+# Copyright (c) 2025, Enfu Liao <efliao@cs.nycu.edu.tw>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# - Redistributions of source code must retain the above copyright notice,
+#   this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+# - Neither the name of the copyright holder nor the names of its contributors
+#   may be used to endorse or promote products derived from this software
+#   without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 
 import math
 import queue
@@ -33,9 +34,10 @@ from home_interfaces.msg import Audio
 from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from scipy.signal import resample
 from std_msgs.msg import String
+from dotenv import load_dotenv
 
 from home_nlp.ban import banlist
-from home_nlp.whisper_online import FasterWhisperASR, OnlineASRProcessor
+from .asr import OnlineASRProcessor, FasterWhisperASR, OpenaiApiASR, ElevenlabsApiASR
 
 # TODO QoS profile
 # TODO 處理 channel > 1 的情況 (audio_cb) => 現在是指處理單 channel
@@ -71,6 +73,8 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info("Configuring automatic speech recognition...")
 
+        load_dotenv()
+
         try:
             self.language = str(self.get_parameter("language").value)
             self.model = str(self.get_parameter("model").value)
@@ -99,9 +103,14 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
 
         try:
             # Automatic Speech Recognition
-            asr = FasterWhisperASR(self.language, self.model)
+            if self.model == "whisper-1":
+                asr = OpenaiApiASR(self.model, self.language)
+            elif self.model == "scribe_v1":
+                asr = ElevenlabsApiASR(self.model, self.language)
+            else:  # TODO[Enfu]
+                asr = FasterWhisperASR(self.model, self.language)
+
             self.online_asr = OnlineASRProcessor(asr)
-            self.online_asr.init()
 
             # Warmup inference
             self.get_logger().info("Running ASR warmup...")
@@ -111,8 +120,8 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
                 )
                 * 0.01
             )
-            self.online_asr.insert_audio_chunk(dummy_audio)
-            _ = self.online_asr.process_iter()
+            self.online_asr.insert_audio(dummy_audio)
+            _ = self.online_asr.process()
 
             self.timer = self.create_timer(self.period, self.timer_cb)
             self.get_logger().info("Activated")
@@ -183,13 +192,13 @@ class AutomaticSpeechRecognitionNode(LifecycleNode):
 
         # Resample
         target_len = int(
-            len(audio) * OnlineASRProcessor.SAMPLING_RATE / self.sample_rate  # type: ignore
-        )
+            len(audio) * OnlineASRProcessor.SAMPLING_RATE / self.sample_rate
+        )  # type: ignore
         resampled_audio = resample(audio, target_len)
 
         # ASR
-        self.online_asr.insert_audio_chunk(resampled_audio.astype(np.float32))
-        result = self.online_asr.process_iter()
+        self.online_asr.insert_audio(resampled_audio.astype(np.float32))
+        result = self.online_asr.process()
 
         # Handle result
         if result is None:
