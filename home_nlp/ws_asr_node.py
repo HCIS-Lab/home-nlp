@@ -24,10 +24,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import base64
 import json
-import math
-import queue
 import threading
 from typing import List, Optional
 
@@ -41,7 +38,6 @@ from rclpy.lifecycle import (
 )
 from rclpy.publisher import Publisher
 from rclpy.timer import Timer
-from scipy import signal
 from std_msgs.msg import Int16MultiArray, String
 from websocket import WebSocketApp
 
@@ -71,6 +67,8 @@ class WebsocketAutomaticSpeechRecognitionNode(LifecycleNode):
         self.ws: Optional[WebSocketApp] = None
         self.ws_asr: Optional[WebsocketASRBase] = None
         self.ws_thread: Optional[threading.Thread] = None
+        self.keepalive_timer: Optional[Timer] = None
+        self.audio_sub: Optional[rclpy.subscription.Subscription] = None
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info("Configuring")
@@ -130,32 +128,52 @@ class WebsocketAutomaticSpeechRecognitionNode(LifecycleNode):
     def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info("Activating")
 
-        self.ws_thread.start()
+        if not self.ws_thread.is_alive():
+            self.ws_thread.start()
 
-
-        _ = self.create_subscription(
+        self.audio_sub = self.create_subscription(
             Int16MultiArray,
             "audio",
             self.audio_cb,  # receive audio and send to websocket
             10,
         )
 
+        self.keepalive_timer = self.create_timer(
+            4.0,
+            self.keepalive_cb,
+        )
+
         self.get_logger().info("Activated")
         return TransitionCallbackReturn.SUCCESS
 
     def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info("Deactivating")
+
+        # Stop keepalive timer
+        if self.keepalive_timer:
+            self.keepalive_timer.cancel()
+            self.keepalive_timer = None
+            self.get_logger().info("Keepalive timer canceled")
+
+        # Stop audio subscription
+        if self.audio_sub:
+            self.destroy_subscription(self.audio_sub)
+            self.audio_sub = None
+            self.get_logger().info("Audio subscription destroyed")
+
+        self.get_logger().info("Deactivated")
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
-        if self.ws:
-            self.ws.close()
+        self.get_logger().info("Cleaning up")
+        self._release_resources()
+        self.get_logger().info("Cleanup complete")
         return TransitionCallbackReturn.SUCCESS
 
     def on_shutdown(self, state: LifecycleState) -> TransitionCallbackReturn:
-        if self.ws:
-            self.ws.close()
-        if self.ws_thread and self.ws_thread.is_alive():
-            self.ws_thread.join(timeout=5.0)
+        self.get_logger().info("Shutting down")
+        self._release_resources()
+        self.get_logger().info("Shutdown complete")
         return TransitionCallbackReturn.SUCCESS
 
     def audio_cb(self, msg: Int16MultiArray):
@@ -178,7 +196,49 @@ class WebsocketAutomaticSpeechRecognitionNode(LifecycleNode):
         msg = String()
         msg.data = transcript
         self.pub.publish(msg)
-    
+
+    def keepalive_cb(self):
+        if self.ws_asr and self.ws_asr.connected:
+            self.ws.send(json.dumps({"type": "KeepAlive"}))
+            self.get_logger().debug("keepalive sent")
+
+    def _release_resources(self):
+        if self.keepalive_timer:
+            self.keepalive_timer.cancel()
+            self.keepalive_timer = None
+
+        if self.audio_sub:
+            self.destroy_subscription(self.audio_sub)
+            self.audio_sub = None
+
+        # Stop websocket
+        if self.ws:
+            self.ws.close()
+            self.get_logger().info("Websocket closed")
+            self.ws = None
+
+        if self.ws_thread and self.ws_thread.is_alive():
+            self.get_logger().info("Joining websocket thread...")
+            self.ws_thread.join(timeout=2.0)
+            if self.ws_thread.is_alive():
+                self.get_logger().warn("Websocket thread did not join in time.")
+            else:
+                self.get_logger().info("Websocket thread joined")
+        self.ws_thread = None
+
+        # Destroy publisher
+        if self.pub:
+            self.destroy_publisher(self.pub)
+            self.get_logger().info("Publisher destroyed")
+            self.pub = None
+
+        # Clear other resources
+        self.ws_asr = None
+        self.provider = None
+        self.model = None
+        self.language = None
+        self.sample_rate = None
+
 
 def main(args: List[str] | None = None):
     rclpy.init(args=args)
