@@ -147,6 +147,16 @@ examples = [
 </root>""",
     },
     {
+        "input": "Bella, introduce yourself.",
+        "output": """<root BTCPP_format="4">
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+        <Speak sentence="Hello! I am Bella. I like to help people. You can ask me to grasp anything on the cabinet for you. For example, you can say: 'Grasp the medicine and hand it over to me.' What can I help you with today?"/>
+    </Sequence>
+  </BehaviorTree>
+</root>""",
+    },
+    {
         "input": "Goodbye!",
         "output": """<root BTCPP_format="4">
   <BehaviorTree ID="MainTree">
